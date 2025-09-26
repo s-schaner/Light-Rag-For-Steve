@@ -3,17 +3,14 @@ services:
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
-    ports:
-      - "11434:11434"
+    ports: ["11434:11434"]
     volumes:
       - ollama_models:/root/.ollama
-    environment:
-      - OLLAMA_KEEP_ALIVE=5m
     healthcheck:
-      test: ["CMD", "bash", "-lc", "curl -sf http://localhost:11434/api/tags > /dev/null"]
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
       interval: 10s
       timeout: 3s
-      retries: 10
+      retries: 20
 
   lightrag:
     build:
@@ -24,23 +21,22 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-    env_file:
-      - .env
-    ports:
-      - "9621:9621"
+    env_file: [.env]
+    ports: ["9621:9621"]
+    working_dir: /app
     volumes:
-      - ./data/inputs:/app/data/inputs
-      - ./data/workspace:/app/data/workspace
+      - ./data/inputs:/app/inputs
+      - ./data/workspace:/app/rag_storage
       - ./lightrag/config.ini:/app/config.ini:ro
     command: >
       bash -lc "
       echo 'Waiting for Ollama...' &&
       until curl -sf ${LLM_BINDING_HOST}/api/tags >/dev/null; do sleep 1; done &&
-      echo 'Pulling default models...' &&
-      curl -sf -X POST ${LLM_BINDING_HOST}/api/pull -d '{\"name\":\"${LLM_MODEL}\"}' || true &&
-      curl -sf -X POST ${EMBEDDING_BINDING_HOST}/api/pull -d '{\"name\":\"${EMBEDDING_MODEL}\"}' || true &&
+      echo 'Pulling models: ${LLM_MODEL} / ${EMBEDDING_MODEL}' &&
+      curl -sf -X POST ${LLM_BINDING_HOST}/api/pull -d '{\"name\":\"'${LLM_MODEL}'\"}' || true &&
+      curl -sf -X POST ${EMBEDDING_BINDING_HOST}/api/pull -d '{\"name\":\"'${EMBEDDING_MODEL}'\"}' || true &&
       echo 'Starting LightRAG server...' &&
-      lightrag-server --host 0.0.0.0 --port 9621 --config /app/config.ini
+      exec lightrag-server --host 0.0.0.0 --port 9621 --config /app/config.ini
       "
 
 volumes:
