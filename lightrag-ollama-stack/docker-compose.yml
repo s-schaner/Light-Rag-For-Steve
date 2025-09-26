@@ -6,6 +6,17 @@ services:
     ports: ["11434:11434"]
     volumes:
       - ollama_models:/root/.ollama
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
       interval: 10s
