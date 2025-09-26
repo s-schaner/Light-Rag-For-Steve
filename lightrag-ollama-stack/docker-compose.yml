@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=5m
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "curl -sf http://localhost:11434/api/tags > /dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  lightrag:
+    build:
+      context: ./lightrag
+      dockerfile: Dockerfile
+    container_name: lightrag
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "9621:9621"
+    volumes:
+      - ./data/inputs:/app/data/inputs
+      - ./data/workspace:/app/data/workspace
+      - ./lightrag/config.ini:/app/config.ini:ro
+    command: >
+      bash -lc "
+      echo 'Waiting for Ollama...' &&
+      until curl -sf ${LLM_BINDING_HOST}/api/tags >/dev/null; do sleep 1; done &&
+      echo 'Pulling default models...' &&
+      curl -sf -X POST ${LLM_BINDING_HOST}/api/pull -d '{\"name\":\"${LLM_MODEL}\"}' || true &&
+      curl -sf -X POST ${EMBEDDING_BINDING_HOST}/api/pull -d '{\"name\":\"${EMBEDDING_MODEL}\"}' || true &&
+      echo 'Starting LightRAG server...' &&
+      lightrag-server --host 0.0.0.0 --port 9621 --config /app/config.ini
+      "
+
+volumes:
+  ollama_models:
